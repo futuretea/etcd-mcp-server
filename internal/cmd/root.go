@@ -7,11 +7,11 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 
-	"github.com/futuretea/mcp-server-template/internal/toolcatalog"
-	"github.com/futuretea/mcp-server-template/pkg/core/config"
-	"github.com/futuretea/mcp-server-template/pkg/core/version"
-	"github.com/futuretea/mcp-server-template/pkg/toolset"
-	"github.com/futuretea/mcp-server-template/pkg/toolset/example"
+	"github.com/futuretea/etcd-mcp-server/internal/toolcatalog"
+	"github.com/futuretea/etcd-mcp-server/pkg/core/config"
+	"github.com/futuretea/etcd-mcp-server/pkg/core/version"
+	"github.com/futuretea/etcd-mcp-server/pkg/toolset"
+	"github.com/futuretea/etcd-mcp-server/pkg/toolset/etcd"
 )
 
 // IOStreams groups the streams used by the CLI.
@@ -28,7 +28,7 @@ func NewRootCommand(streams IOStreams) *cobra.Command {
 
 	command := &cobra.Command{
 		Use:           version.BinaryName,
-		Short:         "MCP server template CLI and Model Context Protocol server",
+		Short:         "Read-only etcd Model Context Protocol server",
 		SilenceUsage:  true,
 		SilenceErrors: true,
 	}
@@ -38,6 +38,7 @@ func NewRootCommand(streams IOStreams) *cobra.Command {
 	command.SetErr(streams.ErrOut)
 
 	addCommonFlags(command, &cfgFile)
+	addEtcdFlags(command)
 	command.AddCommand(newMCPCommand(streams, &cfgFile, v))
 	command.AddCommand(newToolsCommand(streams, &cfgFile, v))
 	command.AddCommand(newVersionCommand(streams))
@@ -54,13 +55,33 @@ func addCommonFlags(command *cobra.Command, cfgFile *string) {
 	flags.StringSlice("disable-domains", []string{}, "comma-separated list of tool domains to disable")
 }
 
+func addEtcdFlags(command *cobra.Command) {
+	flags := command.PersistentFlags()
+	flags.StringSlice("etcd-endpoints", []string{}, "configured etcd endpoints")
+	flags.Duration("etcd-dial-timeout", 5e9, "etcd client dial timeout")
+	flags.Duration("etcd-request-timeout", 10e9, "per-tool etcd request timeout")
+	flags.String("etcd-ca-file", "", "etcd CA certificate path")
+	flags.String("etcd-cert-file", "", "etcd client certificate path")
+	flags.String("etcd-key-file", "", "etcd client private key path")
+	flags.Int("etcd-max-items", 100, "maximum etcd_get items")
+	flags.Int("etcd-max-response-bytes", 1<<20, "maximum tool JSON response bytes")
+}
+
 func bindCommonFlags(v *viper.Viper, cmd *cobra.Command) error {
 	flags := cmd.Root().PersistentFlags()
 	bindings := map[string]string{
-		"enabled_tools":    "enabled-tools",
-		"disabled_tools":   "disabled-tools",
-		"enabled_domains":  "enable-domains",
-		"disabled_domains": "disable-domains",
+		"enabled_tools":           "enabled-tools",
+		"disabled_tools":          "disabled-tools",
+		"enabled_domains":         "enable-domains",
+		"disabled_domains":        "disable-domains",
+		"etcd_endpoints":          "etcd-endpoints",
+		"etcd_dial_timeout":       "etcd-dial-timeout",
+		"etcd_request_timeout":    "etcd-request-timeout",
+		"etcd_ca_file":            "etcd-ca-file",
+		"etcd_cert_file":          "etcd-cert-file",
+		"etcd_key_file":           "etcd-key-file",
+		"etcd_max_items":          "etcd-max-items",
+		"etcd_max_response_bytes": "etcd-max-response-bytes",
 	}
 	for key, flag := range bindings {
 		if err := v.BindPFlag(key, flags.Lookup(flag)); err != nil {
@@ -81,12 +102,15 @@ func loadCLIConfig(cmd *cobra.Command, cfgFile string, v *viper.Viper) (*config.
 	return cfg, nil
 }
 
-func defaultToolsets() []toolset.Toolset {
-	return []toolset.Toolset{&example.Toolset{}}
+func defaultToolsets(cfg *config.StaticConfig, adapter etcd.Adapter) []toolset.Toolset {
+	return []toolset.Toolset{etcd.NewToolset(adapter, etcd.Config{
+		Endpoints: cfg.EtcdEndpoints, RequestTimeout: cfg.EtcdRequestTimeout,
+		MaxItems: cfg.EtcdMaxItems, MaxResponseBytes: cfg.EtcdMaxResponseBytes,
+	})}
 }
 
-func buildToolCatalog(cfg *config.StaticConfig) ([]toolset.ServerTool, error) {
-	return toolcatalog.Build(defaultToolsets(), toolset.FilterOptions{
+func buildToolCatalog(cfg *config.StaticConfig, adapter etcd.Adapter) ([]toolset.ServerTool, error) {
+	return toolcatalog.Build(defaultToolsets(cfg, adapter), toolset.FilterOptions{
 		EnabledTools:    cfg.EnabledTools,
 		DisabledTools:   cfg.DisabledTools,
 		EnabledDomains:  cfg.EnabledDomains,

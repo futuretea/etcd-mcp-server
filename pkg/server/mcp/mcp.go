@@ -3,22 +3,25 @@ package mcp
 import (
 	"context"
 	"fmt"
+	"io"
 	"net/http"
+	"sync"
 
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
 	"github.com/rs/zerolog/log"
 
-	"github.com/futuretea/mcp-server-template/internal/toolcatalog"
-	"github.com/futuretea/mcp-server-template/pkg/core/config"
-	"github.com/futuretea/mcp-server-template/pkg/core/version"
-	"github.com/futuretea/mcp-server-template/pkg/toolset"
+	"github.com/futuretea/etcd-mcp-server/internal/toolcatalog"
+	"github.com/futuretea/etcd-mcp-server/pkg/core/config"
+	"github.com/futuretea/etcd-mcp-server/pkg/core/version"
+	"github.com/futuretea/etcd-mcp-server/pkg/toolset"
 )
 
 // Configuration holds server startup settings.
 type Configuration struct {
 	*config.StaticConfig
 	Toolsets []toolset.Toolset
+	Closer   io.Closer
 }
 
 // Server owns the MCP server and registered tools.
@@ -26,6 +29,8 @@ type Server struct {
 	configuration *Configuration
 	server        *server.MCPServer
 	enabledTools  []string
+	closer        io.Closer
+	closeOnce     sync.Once
 }
 
 // NewServer creates and configures an MCP server.
@@ -36,6 +41,7 @@ func NewServer(configuration Configuration) (*Server, error) {
 
 	s := &Server{
 		configuration: &configuration,
+		closer:        configuration.Closer,
 		server: server.NewMCPServer(
 			version.BinaryName,
 			version.Version,
@@ -101,7 +107,12 @@ func (s *Server) IsHealthy() bool {
 }
 
 // Close releases server resources.
-func (s *Server) Close() {}
+func (s *Server) Close() {
+	if s == nil || s.closer == nil {
+		return
+	}
+	s.closeOnce.Do(func() { _ = s.closer.Close() })
+}
 
 // ServeStdio starts the MCP server over stdin/stdout.
 func (s *Server) ServeStdio() error {

@@ -1,23 +1,23 @@
-BINARY_NAME ?= mcp-server
+BINARY_NAME ?= etcd-mcp-server
 GOLANGCI_LINT ?= golangci-lint
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 COMMIT ?= $(shell git rev-parse --verify --quiet HEAD 2>/dev/null || echo unknown)
 DATE ?= $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
-LDFLAGS := -X github.com/futuretea/mcp-server-template/pkg/core/version.Version=$(VERSION) \
-	-X github.com/futuretea/mcp-server-template/pkg/core/version.Commit=$(COMMIT) \
-	-X github.com/futuretea/mcp-server-template/pkg/core/version.Date=$(DATE)
+LDFLAGS := -X github.com/futuretea/etcd-mcp-server/pkg/core/version.Version=$(VERSION) \
+	-X github.com/futuretea/etcd-mcp-server/pkg/core/version.Commit=$(COMMIT) \
+	-X github.com/futuretea/etcd-mcp-server/pkg/core/version.Date=$(DATE)
 
 .PHONY: build test lint format tidy ci clean docker coverage
 
 build:
-	go build -ldflags "$(LDFLAGS)" -o bin/$(BINARY_NAME) ./cmd/mcp-server
+	go build -ldflags "$(LDFLAGS)" -o bin/$(BINARY_NAME) ./cmd/etcd-mcp-server
 
 test:
 	go test ./...
 
 lint:
 	go vet ./...
-	test -z "$$(gofmt -l cmd internal pkg)"
+	test -z "$$(gofmt -l $$(rg --files -g '*.go'))"
 	@if command -v "$(GOLANGCI_LINT)" >/dev/null 2>&1; then \
 		$(GOLANGCI_LINT) run ./...; \
 	else \
@@ -43,8 +43,8 @@ docker:
 		--build-arg VERSION=$(VERSION) \
 		--build-arg GIT_COMMIT=$(COMMIT) \
 		--build-arg BUILD_DATE=$(DATE) \
-		-t mcp-server-template:$(DOCKER_TAG) \
-		-t mcp-server-template:$(VERSION) .
+		-t etcd-mcp-server:$(DOCKER_TAG) \
+		-t etcd-mcp-server:$(VERSION) .
 
 clean:
 	rm -rf bin coverage.out coverage.txt

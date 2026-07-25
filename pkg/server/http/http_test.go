@@ -1,7 +1,9 @@
 package http_test
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"io"
 	"net"
 	"net/http"
@@ -9,17 +11,19 @@ import (
 	"testing"
 	"time"
 
-	"github.com/futuretea/mcp-server-template/pkg/core/config"
-	internalhttp "github.com/futuretea/mcp-server-template/pkg/server/http"
-	mcpserver "github.com/futuretea/mcp-server-template/pkg/server/mcp"
-	"github.com/futuretea/mcp-server-template/pkg/toolset"
-	"github.com/futuretea/mcp-server-template/pkg/toolset/example"
+	"github.com/mark3labs/mcp-go/mcp"
+
+	"github.com/futuretea/etcd-mcp-server/pkg/core/config"
+	internalhttp "github.com/futuretea/etcd-mcp-server/pkg/server/http"
+	mcpserver "github.com/futuretea/etcd-mcp-server/pkg/server/mcp"
+	"github.com/futuretea/etcd-mcp-server/pkg/toolset"
+	"github.com/futuretea/etcd-mcp-server/pkg/toolset/etcd"
 )
 
 func TestHealthz(t *testing.T) {
 	mcpServer, err := mcpserver.NewServer(mcpserver.Configuration{
 		StaticConfig: &config.StaticConfig{LogLevel: "info"},
-		Toolsets:     []toolset.Toolset{&example.Toolset{}},
+		Toolsets:     []toolset.Toolset{etcd.NewToolset(nil, etcd.Config{})},
 	})
 	if err != nil {
 		t.Fatalf("NewServer: %v", err)
@@ -65,10 +69,119 @@ func TestHealthz(t *testing.T) {
 	}
 }
 
+func TestMCPTransportRoutesAreMounted(t *testing.T) {
+	mcpServer, err := mcpserver.NewServer(mcpserver.Configuration{
+		StaticConfig: &config.StaticConfig{LogLevel: "info"},
+		Toolsets:     []toolset.Toolset{etcd.NewToolset(nil, etcd.Config{})},
+	})
+	if err != nil {
+		t.Fatalf("NewServer: %v", err)
+	}
+	defer mcpServer.Close()
+
+	handler := internalhttp.NewHandler(mcpServer, &http.Server{}, "")
+	for _, tt := range []struct {
+		name   string
+		method string
+		path   string
+		want   int
+	}{
+		{name: "streamable HTTP", method: http.MethodPost, path: internalhttp.MCPEndpoint},
+		{name: "SSE", method: http.MethodPost, path: internalhttp.SSEEndpoint, want: http.StatusMethodNotAllowed},
+		{name: "SSE message", method: http.MethodGet, path: internalhttp.SSEMessageEndpoint, want: http.StatusBadRequest},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			rec := httptest.NewRecorder()
+			handler.ServeHTTP(rec, mustNewRequest(t, tt.method, tt.path))
+			if rec.Code == http.StatusNotFound {
+				t.Fatalf("%s route returned 404", tt.path)
+			}
+			if tt.want != 0 && rec.Code != tt.want {
+				t.Fatalf("%s status = %d, want %d", tt.path, rec.Code, tt.want)
+			}
+		})
+	}
+}
+
+func TestStreamableHTTPRouteInitializesAndListsTools(t *testing.T) {
+	mcpServer, err := mcpserver.NewServer(mcpserver.Configuration{
+		StaticConfig: &config.StaticConfig{LogLevel: "info"},
+		Toolsets:     []toolset.Toolset{etcd.NewToolset(nil, etcd.Config{})},
+	})
+	if err != nil {
+		t.Fatalf("NewServer: %v", err)
+	}
+	defer mcpServer.Close()
+
+	testServer := httptest.NewServer(internalhttp.NewHandler(mcpServer, &http.Server{}, ""))
+	defer testServer.Close()
+	client := testServer.Client()
+
+	initialize := postMCPJSON(t, client, testServer.URL+internalhttp.MCPEndpoint, map[string]any{
+		"jsonrpc": "2.0", "id": 1, "method": "initialize",
+		"params": map[string]any{
+			"protocolVersion": mcp.LATEST_PROTOCOL_VERSION,
+			"clientInfo":      map[string]any{"name": "test", "version": "1.0"},
+		},
+	})
+	defer func() { _ = initialize.Body.Close() }()
+	if initialize.StatusCode != http.StatusOK {
+		t.Fatalf("initialize status = %d", initialize.StatusCode)
+	}
+	var initialized struct {
+		Result struct {
+			ProtocolVersion string `json:"protocolVersion"`
+		} `json:"result"`
+	}
+	if err := json.NewDecoder(initialize.Body).Decode(&initialized); err != nil {
+		t.Fatalf("decode initialize: %v", err)
+	}
+	if initialized.Result.ProtocolVersion != mcp.LATEST_PROTOCOL_VERSION {
+		t.Fatalf("protocol version = %q, want %q", initialized.Result.ProtocolVersion, mcp.LATEST_PROTOCOL_VERSION)
+	}
+
+	list := postMCPJSON(t, client, testServer.URL+internalhttp.MCPEndpoint, map[string]any{
+		"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": map[string]any{},
+	})
+	defer func() { _ = list.Body.Close() }()
+	if list.StatusCode != http.StatusOK {
+		t.Fatalf("tools/list status = %d", list.StatusCode)
+	}
+	var listed struct {
+		Result struct {
+			Tools []json.RawMessage `json:"tools"`
+		} `json:"result"`
+	}
+	if err := json.NewDecoder(list.Body).Decode(&listed); err != nil {
+		t.Fatalf("decode tools/list: %v", err)
+	}
+	if len(listed.Result.Tools) != 12 {
+		t.Fatalf("tools/list count = %d, want 12", len(listed.Result.Tools))
+	}
+}
+
+func postMCPJSON(t *testing.T, client *http.Client, url string, request map[string]any) *http.Response {
+	t.Helper()
+	body, err := json.Marshal(request)
+	if err != nil {
+		t.Fatalf("marshal request: %v", err)
+	}
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodPost, url, bytes.NewReader(body))
+	if err != nil {
+		t.Fatalf("new request: %v", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	response, err := client.Do(req)
+	if err != nil {
+		t.Fatalf("MCP request: %v", err)
+	}
+	return response
+}
+
 func TestServeListenerShutdown(t *testing.T) {
 	mcpServer, err := mcpserver.NewServer(mcpserver.Configuration{
 		StaticConfig: &config.StaticConfig{LogLevel: "info"},
-		Toolsets:     []toolset.Toolset{&example.Toolset{}},
+		Toolsets:     []toolset.Toolset{etcd.NewToolset(nil, etcd.Config{})},
 	})
 	if err != nil {
 		t.Fatalf("NewServer: %v", err)

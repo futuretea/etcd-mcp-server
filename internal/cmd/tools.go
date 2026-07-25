@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -12,7 +13,7 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 
-	"github.com/futuretea/mcp-server-template/pkg/toolset"
+	"github.com/futuretea/etcd-mcp-server/pkg/toolset"
 )
 
 func newToolsCommand(streams IOStreams, cfgFile *string, v *viper.Viper) *cobra.Command {
@@ -32,14 +33,14 @@ func newToolsListCommand(streams IOStreams, cfgFile *string, v *viper.Viper) *co
 	command := &cobra.Command{
 		Use:   "list",
 		Short: "list enabled tools",
-		Example: `  mcp-server tools list
-  mcp-server tools list --json`,
+		Example: `  etcd-mcp-server tools list
+  etcd-mcp-server tools list --json`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cfg, err := loadCLIConfig(cmd, *cfgFile, v)
 			if err != nil {
 				return err
 			}
-			tools, err := buildToolCatalog(cfg)
+			tools, err := buildToolCatalog(cfg, nil)
 			if err != nil {
 				return err
 			}
@@ -59,21 +60,21 @@ func newToolsDescribeCommand(streams IOStreams, cfgFile *string, v *viper.Viper)
 		Use:     "describe <tool-name>",
 		Aliases: []string{"schema"},
 		Short:   "describe an enabled tool schema",
-		Example: `  mcp-server tools describe echo
-  mcp-server tools describe echo --json`,
+		Example: `  etcd-mcp-server tools describe etcd_get
+  etcd-mcp-server tools describe etcd_get --json`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cfg, err := loadCLIConfig(cmd, *cfgFile, v)
 			if err != nil {
 				return err
 			}
-			tools, err := buildToolCatalog(cfg)
+			tools, err := buildToolCatalog(cfg, nil)
 			if err != nil {
 				return err
 			}
 			tool, ok := findTool(tools, args[0])
 			if !ok {
-				return fmt.Errorf("unknown tool %q; run 'mcp-server tools list' to see available tools", args[0])
+				return fmt.Errorf("unknown tool %q; run 'etcd-mcp-server tools list' to see available tools", args[0])
 			}
 			description := newToolDescription(tool)
 			if jsonOutput {
@@ -94,9 +95,8 @@ func newToolsCallCommand(streams IOStreams, cfgFile *string, v *viper.Viper) *co
 	command := &cobra.Command{
 		Use:   "call <tool-name>",
 		Short: "call an enabled tool with JSON parameters",
-		Example: `  mcp-server tools call echo --params '{"message":"hello"}'
-  echo '{"message":"hello"}' | mcp-server tools call echo --params-file -
-  mcp-server tools call ping --params '{}'`,
+		Example: `  etcd-mcp-server tools call etcd_get --params '{"key":"/applications/","prefix":true}'
+  etcd-mcp-server tools call etcd_status --params '{"endpoint":"https://127.0.0.1:2379"}'`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cfg, err := loadCLIConfig(cmd, *cfgFile, v)
@@ -107,13 +107,25 @@ func newToolsCallCommand(streams IOStreams, cfgFile *string, v *viper.Viper) *co
 			if err != nil {
 				return err
 			}
-			tools, err := buildToolCatalog(cfg)
+			schemaTools, err := buildToolCatalog(cfg, nil)
+			if err != nil {
+				return err
+			}
+			if _, ok := findTool(schemaTools, args[0]); !ok {
+				return fmt.Errorf("unknown tool %q; run 'etcd-mcp-server tools list' to see available tools", args[0])
+			}
+			runtime, err := newRuntimeClient(cfg)
+			if err != nil {
+				return err
+			}
+			defer func() { _ = runtime.close() }()
+			tools, err := buildToolCatalog(cfg, runtime.adapter)
 			if err != nil {
 				return err
 			}
 			tool, ok := findTool(tools, args[0])
 			if !ok {
-				return fmt.Errorf("unknown tool %q; run 'mcp-server tools list' to see available tools", args[0])
+				return fmt.Errorf("unknown tool %q; run 'etcd-mcp-server tools list' to see available tools", args[0])
 			}
 			result, err := tool.Handler(cmd.Context(), params)
 			if err != nil {
@@ -236,7 +248,16 @@ func parseToolParams(rawParams, paramsFile string, stdin io.Reader) (map[string]
 		payload = "{}"
 	}
 	params := map[string]any{}
-	if err := json.Unmarshal([]byte(payload), &params); err != nil {
+	decoder := json.NewDecoder(bytes.NewBufferString(payload))
+	decoder.UseNumber()
+	if err := decoder.Decode(&params); err != nil {
+		return nil, fmt.Errorf("parse tool params JSON: %w", err)
+	}
+	var trailing any
+	if err := decoder.Decode(&trailing); err != io.EOF {
+		if err == nil {
+			return nil, fmt.Errorf("parse tool params JSON: expected a single JSON object")
+		}
 		return nil, fmt.Errorf("parse tool params JSON: %w", err)
 	}
 	if params == nil {

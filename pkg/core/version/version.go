@@ -2,7 +2,7 @@ package version
 
 import "fmt"
 
-const BinaryName = "mcp-server"
+const BinaryName = "etcd-mcp-server"
 
 var (
 	Version = "dev"

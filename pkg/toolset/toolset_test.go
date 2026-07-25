@@ -5,13 +5,13 @@ import (
 
 	"github.com/mark3labs/mcp-go/mcp"
 
-	"github.com/futuretea/mcp-server-template/pkg/toolset"
+	"github.com/futuretea/etcd-mcp-server/pkg/toolset"
 )
 
 func TestFilterTools(t *testing.T) {
 	tools := []toolset.ServerTool{
-		{Tool: mcp.NewTool("echo"), Domain: "example"},
-		{Tool: mcp.NewTool("ping"), Domain: "example"},
+		{Tool: mcp.NewTool("alpha"), Domain: "one"},
+		{Tool: mcp.NewTool("beta"), Domain: "one"},
 		{Tool: mcp.NewTool("other"), Domain: "other"},
 	}
 
@@ -23,19 +23,19 @@ func TestFilterTools(t *testing.T) {
 		{
 			name: "enabled domain and disabled tool",
 			opts: toolset.FilterOptions{
-				EnabledDomains: []string{"example"},
-				DisabledTools:  []string{"ping"},
+				EnabledDomains: []string{"one"},
+				DisabledTools:  []string{"beta"},
 			},
-			want: []string{"echo"},
+			want: []string{"alpha"},
 		},
 		{
 			name: "enabled tools only",
-			opts: toolset.FilterOptions{EnabledTools: []string{"ping"}},
-			want: []string{"ping"},
+			opts: toolset.FilterOptions{EnabledTools: []string{"beta"}},
+			want: []string{"beta"},
 		},
 		{
 			name: "disabled domain",
-			opts: toolset.FilterOptions{DisabledDomains: []string{"example"}},
+			opts: toolset.FilterOptions{DisabledDomains: []string{"one"}},
 			want: []string{"other"},
 		},
 		{

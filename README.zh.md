@@ -1,195 +1,54 @@
-# MCP Server Template
+# etcd MCP Server
 
-[English](README.md)
+`etcd-mcp-server` 为 etcd v3.5.33 提供立即返回、只读的 MCP 查询工具。它保留 stdio、Streamable HTTP 和 SSE 传输，并只返回有边界的 JSON 文本。
 
-可 clone 的最小 MCP（Model Context Protocol）server 骨架。同一二进制同时提供给 AI 助手用的 **MCP server**，以及给人用的小型 **CLI**。内置示例工具 `echo` / `ping`。
+## 工具范围
 
-## 快速开始
+公开工具固定为：`etcd_get`、`etcd_lease_ttl`、`etcd_lease_list`、`etcd_member_list`、`etcd_alarm_list`、`etcd_status`、`etcd_hash_kv`、`etcd_auth_status`、`etcd_user_get`、`etcd_user_list`、`etcd_role_get`、`etcd_role_list`。
+
+不提供写入、删除、事务、Auth 管理、Watch、Snapshot、RangeStream、reader 或 channel 工具。`etcd_status` 与 `etcd_hash_kv` 的 endpoint 必须精确匹配启动配置的 `etcd_endpoints`，MCP 参数不能成为新的拨号目标。
+
+## 配置与启动
+
+复制 [config.example.yaml](config.example.yaml)，填写 etcd endpoint 和可选 TLS 文件路径。默认拨号超时为 5s，每个工具请求超时为 10s，KV 最多 100 项，JSON 文本最多 1 MiB。
 
 ```bash
-# 需要 Go 1.25+（见 .tool-versions）
 make build
-./bin/mcp-server version
-
-# 启动 MCP server（默认 stdio）
-./bin/mcp-server mcp
-
-# 不经过 MCP 客户端，直接用 CLI 列工具 / 调工具
-./bin/mcp-server tools list
-./bin/mcp-server tools call echo --params '{"message":"hello"}'
-./bin/mcp-server tools call ping --params '{}'
+./bin/etcd-mcp-server tools list --json
+./bin/etcd-mcp-server --config config.example.yaml tools call etcd_get --params '{"key":"/applications/","prefix":true}'
+./bin/etcd-mcp-server --config config.example.yaml mcp
 ```
 
-## 功能
+认证仅从 `MCP_ETCD_USERNAME` 与 `MCP_ETCD_PASSWORD` 成对读取；它们不写入 YAML，也不能由 tool 参数传入。两个变量必须同时存在或同时缺省。
 
-- **子命令 CLI**：`mcp` 才启动 server；`tools` / `version` / `completion` 独立
-- **多传输**：stdio、Streamable HTTP、SSE
-- **工具过滤**：`--enabled-tools`、`--disabled-tools`、`--enable-domains`、`--disable-domains`
-- **工程化默认项**：Makefile、Dockerfile、GitHub Actions CI、golangci-lint、MIT License
+`etcd_get` 默认只返回 key 元数据。只有设置 `include_values: true` 才返回 value。每个 key 或 range endpoint 必须且只能使用 UTF-8 JSON 字符串（`key`、`range_end`）或带 padding 的 RFC 4648 Base64（`key_base64`、`range_end_base64`）之一传入；二进制输出使用 `*_base64`。所有公开的 64 位整数输入和输出都使用规范十进制 JSON 字符串，避免 MCP client 精度丢失。`limit` 默认等于 `etcd_max_items` 且不能超过它；超过 `etcd_max_response_bytes` 的结果明确失败，不返回部分 JSON。
 
-## CLI 命令
+## 传输与部署边界
 
-| 命令 | 作用 |
-|------|------|
-| `mcp-server mcp` | 启动 MCP server（stdio 或 HTTP） |
-| `mcp-server tools list` | 列出已启用工具 |
-| `mcp-server tools describe <name>` | 查看工具 schema |
-| `mcp-server tools call <name>` | 用 JSON 参数调用工具 |
-| `mcp-server version` | 打印构建信息 |
-| `mcp-server completion <shell>` | 生成 shell 补全脚本 |
-
-### tools 示例
+stdio 是默认传输。HTTP 模式保留 `/healthz`、`/mcp`、`/sse`、`/message`：
 
 ```bash
-./bin/mcp-server tools list
-./bin/mcp-server tools list --json
-./bin/mcp-server tools describe echo
-./bin/mcp-server tools describe echo --json
-./bin/mcp-server tools call echo --params '{"message":"hello"}'
-echo '{"message":"hello"}' | ./bin/mcp-server tools call echo --params-file -
-./bin/mcp-server tools call ping --params '{}'
+./bin/etcd-mcp-server --config config.example.yaml mcp --port 8080 --listen 127.0.0.1
 ```
 
-## MCP 传输模式
+非 loopback HTTP/SSE 部署的入站网络控制和失控处置由外部网络管理员负责。本仓库不实现或验证入站认证、TLS 终止、反向代理或网络分段。
 
-### Stdio（默认）
+## 可选集成测试
+
+固定单元测试不会连接 etcd。明确提供 v3.5.33 环境后可运行：
 
 ```bash
-./bin/mcp-server mcp
+MCP_ETCD_INTEGRATION_ENDPOINTS=https://127.0.0.1:2379 go test -tags=integration ./...
 ```
 
-Cursor / Claude Desktop 配置示例：
+唯一必填的 integration 变量是 `MCP_ETCD_INTEGRATION_ENDPOINTS`。可选 TLS 变量为 `MCP_ETCD_INTEGRATION_CA_FILE` 和成对的 `MCP_ETCD_INTEGRATION_CERT_FILE` / `MCP_ETCD_INTEGRATION_KEY_FILE`；需要认证时复用运行时凭据变量。可选 fixture 为 `MCP_ETCD_INTEGRATION_GET_KEY_BASE64`、`MCP_ETCD_INTEGRATION_LEASE_ID`、`MCP_ETCD_INTEGRATION_USER` 和 `MCP_ETCD_INTEGRATION_ROLE`，缺失时只 skip 对应子测试。缺少 integration endpoint 时整个套件清晰 skip，不能掩盖固定单元测试失败。
 
-```json
-{
-  "mcpServers": {
-    "mcp-server-template": {
-      "command": "/absolute/path/to/bin/mcp-server",
-      "args": ["mcp"]
-    }
-  }
-}
-```
-
-### Streamable HTTP
+## 开发验证
 
 ```bash
-./bin/mcp-server mcp --port 8080
-curl -s http://127.0.0.1:8080/healthz
-```
-
-客户端配置示例：
-
-```json
-{
-  "mcpServers": {
-    "mcp-server-template": {
-      "url": "http://127.0.0.1:8080/mcp"
-    }
-  }
-}
-```
-
-### SSE
-
-与 HTTP 模式同一进程。端点：
-
-| 路径 | 用途 |
-|------|------|
-| `/healthz` | 健康检查（`GET`/`HEAD`） |
-| `/mcp` | Streamable HTTP |
-| `/sse` | SSE 连接 |
-| `/message` | SSE message endpoint |
-
-```bash
-./bin/mcp-server mcp --port 8080 --sse-base-url http://127.0.0.1:8080
-```
-
-### Docker
-
-```bash
-# 构建
-make docker
-
-# Stdio（默认 ENTRYPOINT 为 mcp-server mcp）
-docker run -i --rm mcp-server-template:dev
-
-# HTTP
-docker run --rm -p 8080:8080 mcp-server-template:dev --port 8080 --listen 0.0.0.0
-```
-
-HTTP / SSE **无鉴权、无 TLS**。默认 `--listen 127.0.0.1`。仅在受信网络使用；对外暴露时请自行加反向代理与认证。
-
-## 配置
-
-优先级：**flags > 环境变量 > 配置文件 > 默认值**。
-
-### 环境变量
-
-| 变量 | 说明 | 默认 |
-|------|------|------|
-| `MCP_LOG_LEVEL` | 日志级别 | `info` |
-| `MCP_PORT` | HTTP 端口（`0` = stdio） | `0` |
-| `MCP_LISTEN` | HTTP 监听地址 | `127.0.0.1` |
-| `MCP_SSE_BASE_URL` | 对外 SSE base URL | `""` |
-
-### 配置文件
-
-见 `config.example.yaml`：
-
-```yaml
-port: 0
-listen: 127.0.0.1
-sse_base_url: ""
-log_level: info
-enabled_tools: []
-disabled_tools: []
-enabled_domains: []
-disabled_domains: []
-```
-
-```bash
-./bin/mcp-server mcp --config config.example.yaml --port 8080
-```
-
-## 目录结构
-
-```
-cmd/mcp-server/          # 入口
-internal/cmd/            # cobra CLI（mcp / tools / version / completion）
-pkg/core/                # config / logging / version
-pkg/server/mcp/          # MCP 注册与 transport
-pkg/server/http/         # HTTP / SSE / healthz
-pkg/toolset/             # Toolset 接口与过滤
-pkg/toolset/example/     # 示例 tools（替换为你的业务）
-.github/workflows/       # CI
-```
-
-## 扩展自己的 tools
-
-1. 在 `pkg/toolset/<your-domain>/` 实现 `toolset.Toolset`。
-2. 在 `internal/cmd/root.go` 的 `defaultToolsets()` 中挂载。
-3. 用 `--enabled-tools` / `--enable-domains` 控制暴露面。
-
-## 开发
-
-```bash
-make tidy
-make format
-make lint
-make test
-make coverage
-make ci
+go test ./...
+go vet ./...
+test -z "$(gofmt -l $(rg --files -g '*.go'))"
+go mod verify
 make build
-make docker
 ```
-
-CI（`.github/workflows/build.yaml`）会跑 lint、带 race 的测试与覆盖率上传、多 OS 构建、CLI smoke（`version` / `tools list`）以及 Docker 镜像构建。
-
-## 本地对照样例
-
-`third-party-projects/` 可放置本地对照代码，已在 `.gitignore` 中，不属于模板交付物。
-
-## License
-
-[MIT](LICENSE)

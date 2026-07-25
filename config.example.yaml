@@ -2,6 +2,15 @@ port: 0
 listen: 127.0.0.1
 sse_base_url: ""
 log_level: info
+etcd_endpoints:
+  - https://127.0.0.1:2379
+etcd_dial_timeout: 5s
+etcd_request_timeout: 10s
+etcd_ca_file: ""
+etcd_cert_file: ""
+etcd_key_file: ""
+etcd_max_items: 100
+etcd_max_response_bytes: 1048576
 enabled_tools: []
 disabled_tools: []
 enabled_domains: []
