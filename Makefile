@@ -16,14 +16,44 @@ NPM ?= npm
 NODE ?= node
 NPM_UNIX_PLATFORMS := darwin-amd64 darwin-arm64 linux-amd64 linux-arm64
 NPM_WINDOWS_PLATFORMS := windows-amd64
+ETCD_E2E_IMAGE ?= quay.io/coreos/etcd:v3.5.33
 
-.PHONY: build test lint format tidy ci clean docker coverage npm-test-launcher npm-verify-binaries npm-prepare-packages npm-create-tarballs npm-publish
+.PHONY: build test test-e2e lint format tidy ci clean docker coverage npm-test-launcher npm-verify-binaries npm-prepare-packages npm-create-tarballs npm-publish
 
 build:
 	go build -ldflags "$(LDFLAGS)" -o bin/$(BINARY_NAME) ./cmd/etcd-mcp-server
 
 test:
 	go test ./...
+
+test-e2e:
+	@set -eu; \
+		container="$$(docker run --rm -d -P "$(ETCD_E2E_IMAGE)" /usr/local/bin/etcd --name e2e --data-dir /etcd-data --listen-client-urls http://0.0.0.0:2379 --advertise-client-urls http://0.0.0.0:2379)"; \
+		cleanup() { docker stop "$$container" >/dev/null 2>&1 || true; }; \
+		trap cleanup EXIT; \
+		for attempt in $$(seq 1 30); do \
+			if docker exec "$$container" etcdctl endpoint health >/dev/null 2>&1; then break; fi; \
+			if [ "$$attempt" = 30 ]; then docker logs "$$container"; exit 1; fi; \
+			sleep 1; \
+		done; \
+		docker exec "$$container" etcdctl put /e2e/get value; \
+		lease_hex="$$(docker exec "$$container" etcdctl lease grant 60 | sed -n 's/^lease \([^ ]*\) granted.*/\1/p')"; \
+		test -n "$$lease_hex"; \
+		docker exec "$$container" etcdctl put --lease="$$lease_hex" /e2e/lease value; \
+		lease_id="$$(printf '%d' "0x$$lease_hex")"; \
+		port="$$(docker port "$$container" 2379/tcp | sed -n '1s/.*://p')"; \
+		test -n "$$port"; \
+		MCP_ETCD_INTEGRATION_ENDPOINTS="http://127.0.0.1:$$port" \
+		MCP_ETCD_INTEGRATION_GET_KEY_BASE64="$$(printf '%s' /e2e/get | base64)" \
+		MCP_ETCD_INTEGRATION_LEASE_ID="$$lease_id" \
+		MCP_ETCD_INTEGRATION_CA_FILE= \
+		MCP_ETCD_INTEGRATION_CERT_FILE= \
+		MCP_ETCD_INTEGRATION_KEY_FILE= \
+		MCP_ETCD_INTEGRATION_USER= \
+		MCP_ETCD_INTEGRATION_ROLE= \
+		MCP_ETCD_USERNAME= \
+		MCP_ETCD_PASSWORD= \
+		go test -v -tags=integration ./integration
 
 lint:
 	go vet ./...
@@ -44,7 +74,7 @@ coverage:
 	go test ./pkg/... -coverprofile=coverage.out
 	go tool cover -func=coverage.out | tail -1
 
-ci: lint test build
+ci: lint test test-e2e build
 
 DOCKER_TAG ?= dev
 

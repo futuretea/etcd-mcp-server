@@ -83,9 +83,19 @@ Stdio is the default transport. HTTP mode retains `/healthz`, `/mcp`, `/sse`, an
 
 For non-loopback HTTP/SSE deployments, the external network administrator owns inbound access control and incident response. This repository does not implement or validate inbound authentication, TLS termination, reverse proxies, or network segmentation.
 
-## Optional integration test
+## E2E test
 
-The fixed unit suite does not contact etcd. A real v3.5.33 environment is opt-in:
+The E2E test starts `quay.io/coreos/etcd:v3.5.33` in Docker, seeds a key and a lease, and invokes the MCP tool handlers against that live server:
+
+```bash
+make test-e2e
+```
+
+Docker is required. The fixture is isolated from external integration TLS and authentication settings, uses an ephemeral host port, and is removed when the test finishes. CI runs this test for every pull request and every push to `main`.
+
+## Optional external integration test
+
+Use an external v3.5.33 environment when TLS, authentication, or additional fixtures must be verified:
 
 ```bash
 MCP_ETCD_INTEGRATION_ENDPOINTS=https://127.0.0.1:2379 go test -tags=integration ./...

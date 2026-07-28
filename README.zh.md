@@ -81,9 +81,19 @@ stdio 是默认传输。HTTP 模式保留 `/healthz`、`/mcp`、`/sse`、`/messa
 
 非 loopback HTTP/SSE 部署的入站网络控制和失控处置由外部网络管理员负责。本仓库不实现或验证入站认证、TLS 终止、反向代理或网络分段。
 
-## 可选集成测试
+## E2E 测试
 
-固定单元测试不会连接 etcd。明确提供 v3.5.33 环境后可运行：
+E2E 测试会通过 Docker 启动 `quay.io/coreos/etcd:v3.5.33`，写入一个 key 和一个租约，再通过 MCP tool handler 访问这个真实服务：
+
+```bash
+make test-e2e
+```
+
+该测试需要 Docker。fixture 不继承外部集成测试的 TLS 或认证配置，使用临时宿主机端口，并在测试结束后删除。CI 会在每个 PR 和每次推送到 `main` 时运行它。
+
+## 可选外部集成测试
+
+需要验证 TLS、认证或额外 fixture 时，可提供外部 v3.5.33 环境：
 
 ```bash
 MCP_ETCD_INTEGRATION_ENDPOINTS=https://127.0.0.1:2379 go test -tags=integration ./...
