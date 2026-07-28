@@ -1,5 +1,7 @@
 # etcd MCP Server
 
+[中文文档](README.zh.md)
+
 `etcd-mcp-server` is an MCP server for the immediate, read-only etcd v3.5.33 operations. It keeps the existing stdio, Streamable HTTP, and SSE transports while exposing only bounded JSON text tools.
 
 ## Read-only surface
