@@ -1,0 +1,8 @@
+{
+  "name": "@futuretea/etcd-mcp-server-linux-amd64",
+  "version": "0.0.0",
+  "description": "etcd MCP Server binary for linux/amd64",
+  "files": ["bin/etcd-mcp-server"],
+  "os": ["linux"],
+  "cpu": ["x64"]
+}

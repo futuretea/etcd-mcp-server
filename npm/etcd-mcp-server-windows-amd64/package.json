@@ -1,0 +1,8 @@
+{
+  "name": "@futuretea/etcd-mcp-server-windows-amd64",
+  "version": "0.0.0",
+  "description": "etcd MCP Server binary for windows/amd64",
+  "files": ["bin/etcd-mcp-server.exe"],
+  "os": ["win32"],
+  "cpu": ["x64"]
+}

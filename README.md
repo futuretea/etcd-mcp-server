@@ -23,6 +23,54 @@ Use `MCP_ETCD_USERNAME` and `MCP_ETCD_PASSWORD` together for etcd authentication
 
 `etcd_get` returns key metadata by default. Set `include_values: true` only when values are required. Supply each key or range endpoint as exactly one of a UTF-8 JSON string (`key`, `range_end`) or padded RFC 4648 Base64 (`key_base64`, `range_end_base64`); binary values are returned as `*_base64`. Every public 64-bit integer input and output is a canonical decimal JSON string, so MCP clients do not lose precision. `limit` defaults to `etcd_max_items` and cannot exceed it. A response larger than `etcd_max_response_bytes` fails without partial JSON.
 
+## Install a release
+
+Pushing a tag that starts with `v` runs independent npm and Docker release workflows. The npm workflow publishes the launcher and native packages for macOS (amd64 and arm64), Linux (amd64 and arm64), and Windows (amd64), then creates the GitHub release. The Docker workflow publishes `linux/amd64` and `linux/arm64` images to GitHub Container Registry (GHCR).
+
+The npm package uses the tag text after the leading `v` as its package version, so it must be a valid npm version. The Docker workflow uses the complete tag as its image tag; maintainers must use a tag compatible with both npm and Docker. For example, npm accepts `v1.2.3+build.7`, but Docker does not accept `+` in an image tag and that release can publish only npm artifacts. Maintainers must set the repository `NPM_TOKEN` secret before the npm workflow can publish.
+
+### npm
+
+Run a released version with `npx`:
+
+```bash
+npx -y @futuretea/etcd-mcp-server@<version> --config ./config.yaml
+```
+
+For an MCP client configuration:
+
+```json
+{
+  "mcpServers": {
+    "etcd-readonly": {
+      "command": "npx",
+      "args": ["-y", "@futuretea/etcd-mcp-server@<version>", "--config", "/absolute/path/to/config.yaml"]
+    }
+  }
+}
+```
+
+The npm command always starts the MCP server. Use a pinned package version for reproducible deployments.
+
+### Docker
+
+Run a released image with a read-only config mount:
+
+```bash
+docker run --rm -i \
+  --mount type=bind,src="$PWD/config.yaml",dst=/etc/etcd-mcp-server/config.yaml,readonly \
+  ghcr.io/futuretea/etcd-mcp-server:<tag> \
+  --config /etc/etcd-mcp-server/config.yaml
+```
+
+For Docker-based MCP clients, use the same image and pass the config mount to the Docker process. Add `MCP_ETCD_USERNAME` and `MCP_ETCD_PASSWORD` together when the configured etcd cluster requires authentication.
+
+When the config names TLS files, mount their containing directory too and use the container paths in `etcd_ca_file`, `etcd_cert_file`, and `etcd_key_file`:
+
+```bash
+--mount type=bind,src="$PWD/tls",dst=/etc/etcd-mcp-server/tls,readonly
+```
+
 ## Transports and deployment boundary
 
 Stdio is the default transport. HTTP mode retains `/healthz`, `/mcp`, `/sse`, and `/message`:

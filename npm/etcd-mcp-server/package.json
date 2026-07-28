@@ -1,0 +1,35 @@
+{
+  "name": "@futuretea/etcd-mcp-server",
+  "version": "0.0.0",
+  "description": "Read-only etcd Model Context Protocol server",
+  "files": ["bin"],
+  "main": "./bin/index.js",
+  "bin": {
+    "etcd-mcp-server": "bin/index.js"
+  },
+  "optionalDependencies": {
+    "@futuretea/etcd-mcp-server-darwin-amd64": "0.0.0",
+    "@futuretea/etcd-mcp-server-darwin-arm64": "0.0.0",
+    "@futuretea/etcd-mcp-server-linux-amd64": "0.0.0",
+    "@futuretea/etcd-mcp-server-linux-arm64": "0.0.0",
+    "@futuretea/etcd-mcp-server-windows-amd64": "0.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/futuretea/etcd-mcp-server.git"
+  },
+  "keywords": [
+    "mcp",
+    "etcd",
+    "model-context-protocol"
+  ],
+  "author": {
+    "name": "futuretea",
+    "url": "https://github.com/futuretea"
+  },
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/futuretea/etcd-mcp-server/issues"
+  },
+  "homepage": "https://github.com/futuretea/etcd-mcp-server#readme"
+}

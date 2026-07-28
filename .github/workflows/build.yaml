@@ -100,6 +100,21 @@ jobs:
           ./bin/etcd-mcp-server version
           ./bin/etcd-mcp-server tools list
 
+  npm-launcher:
+    name: npm Launcher
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Test npm launcher
+        run: make npm-test-launcher
+
   docker:
     name: Docker Build
     runs-on: ubuntu-latest

@@ -1,0 +1,8 @@
+{
+  "name": "@futuretea/etcd-mcp-server-darwin-arm64",
+  "version": "0.0.0",
+  "description": "etcd MCP Server binary for darwin/arm64",
+  "files": ["bin/etcd-mcp-server"],
+  "os": ["darwin"],
+  "cpu": ["arm64"]
+}

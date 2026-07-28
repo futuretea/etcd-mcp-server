@@ -33,8 +33,6 @@ ENTRYPOINT ["/usr/local/bin/etcd-mcp-server", "mcp"]
 
 FROM runtime AS release
 
-COPY etcd-mcp-server /usr/local/bin/etcd-mcp-server
-
-FROM runtime AS dev
-
 COPY --from=builder /usr/local/bin/etcd-mcp-server /usr/local/bin/etcd-mcp-server
+
+FROM release AS dev
