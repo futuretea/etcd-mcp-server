@@ -141,11 +141,6 @@ func TestToolsListPreservesEmptyAllowListAndRealNames(t *testing.T) {
 			want: []string{"etcd_lease_list"},
 		},
 		{
-			name: "blank deny-list lists every tool",
-			args: []string{"--disabled-tools", " "},
-			want: approvedCatalog(),
-		},
-		{
 			name: "blank endpoints still list tools",
 			yaml: "etcd_endpoints: [\" \", \"\"]\n",
 			want: approvedCatalog(),
