@@ -115,9 +115,16 @@ func LoadConfig(configPath string, v *viper.Viper) (*StaticConfig, error) {
 
 	cfg.Listen = strings.TrimSpace(cfg.Listen)
 	cfg.LogLevel = strings.ToLower(strings.TrimSpace(cfg.LogLevel))
-	cfg.EnabledTools = normalizeStringSlice(cfg.EnabledTools)
+	var err error
+	cfg.EnabledTools, err = normalizeAllowList("enabled_tools", cfg.EnabledTools)
+	if err != nil {
+		return nil, err
+	}
 	cfg.DisabledTools = normalizeStringSlice(cfg.DisabledTools)
-	cfg.EnabledDomains = normalizeStringSlice(cfg.EnabledDomains)
+	cfg.EnabledDomains, err = normalizeAllowList("enabled_domains", cfg.EnabledDomains)
+	if err != nil {
+		return nil, err
+	}
 	cfg.DisabledDomains = normalizeStringSlice(cfg.DisabledDomains)
 	cfg.EtcdEndpoints = normalizeStringSlice(cfg.EtcdEndpoints)
 	cfg.EtcdCAFile = strings.TrimSpace(cfg.EtcdCAFile)
@@ -128,6 +135,14 @@ func LoadConfig(configPath string, v *viper.Viper) (*StaticConfig, error) {
 		return nil, err
 	}
 	return cfg, nil
+}
+
+func normalizeAllowList(name string, values []string) ([]string, error) {
+	normalized := normalizeStringSlice(values)
+	if len(values) > 0 && len(normalized) == 0 {
+		return nil, fmt.Errorf("%s must include a non-blank name when set", name)
+	}
+	return normalized, nil
 }
 
 func normalizeStringSlice(values []string) []string {
