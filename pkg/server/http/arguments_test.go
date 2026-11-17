@@ -149,10 +149,13 @@ func callTool(t *testing.T, client *http.Client, url, payload string) string {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer resp.Body.Close()
 	raw, err := io.ReadAll(resp.Body)
+	closeErr := resp.Body.Close()
 	if err != nil {
 		t.Fatal(err)
+	}
+	if closeErr != nil {
+		t.Fatal(closeErr)
 	}
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("status = %d body = %s", resp.StatusCode, raw)
